@@ -10,7 +10,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser',
+    minify: 'esbuild',
   },
   define: {
     'import.meta.env.VITE_API_URL': JSON.stringify(
