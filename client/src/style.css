@@ -366,6 +366,7 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .color-info code {
@@ -373,6 +374,15 @@ textarea {
   font-size: 0.9rem;
   font-weight: 600;
   color: #667eea;
+}
+
+.color-info .color-name {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 0.25rem 0 0 0;
+  font-style: italic;
+  flex-basis: 100%;
+  text-align: left;
 }
 
 /* ==================

@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 import os
+import logging
 from dotenv import load_dotenv
 
 from core.extractor import KMeansExtractor
 from core.llm_service import LLMPaletteService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 # Load environment variables
 load_dotenv()
@@ -26,15 +33,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request Models
+class GeneratePaletteRequest(BaseModel):
+    """Request model for palette generation from text prompt."""
+    prompt: str
+    vibe: str = "vibrant"
+
+class RefinePaletteRequest(BaseModel):
+    """Request model for palette refinement."""
+    colors: list
+    instruction: str
+    vibe: str = "vibrant"
+
 # Initialize services
 extractor = KMeansExtractor()
 llm_service = LLMPaletteService()
+
+if DEBUG:
+    logger.info("🐛 DEBUG MODE ENABLED")
+    logger.info(f"   LLM Provider: {os.getenv('LLM_PROVIDER', 'gemini')}")
 
 
 @app.get("/")
 def read_root():
     """Health check endpoint."""
-    return {"message": "Color Palette API is running"}
+    if DEBUG:
+        logger.info("✅ Health check ping")
+    return {"message": "Color Palette API is running", "debug": DEBUG}
 
 
 @app.post("/api/extract-palette")
@@ -63,26 +88,69 @@ async def extract_palette(image_url: str):
 
 
 @app.post("/api/generate-palette")
-async def generate_palette(prompt: str, vibe: str = "vibrant"):
+async def generate_palette(request: GeneratePaletteRequest):
     """
     Generate a color palette from a text prompt using LLM.
     
     Args:
-        prompt: Description of the desired palette
-        vibe: Mood/style (e.g., "vibrant", "minimal", "dark", "pastel")
+        request: GeneratePaletteRequest with prompt and vibe
     
     Returns:
-        Palette with hex color codes and descriptions
+        Palette with 5 hex color codes and descriptions
     """
     try:
-        palette = await llm_service.generate_palette(prompt, vibe)
+        if DEBUG:
+            logger.info(f"📝 Generate palette: prompt='{request.prompt[:50]}...', vibe='{request.vibe}'")
+        
+        palette = await llm_service.generate_palette(request.prompt, request.vibe)
+        
+        if DEBUG:
+            logger.info(f"✅ Palette generated: {len(palette.get('colors', []))} colors")
+        
         return {
             "success": True,
             "palette": palette,
-            "prompt": prompt,
-            "vibe": vibe
+            "prompt": request.prompt,
+            "vibe": request.vibe
         }
     except Exception as e:
+        if DEBUG:
+            logger.error(f"❌ Error generating palette: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@app.post("/api/refine-palette")
+async def refine_palette(request: RefinePaletteRequest):
+    """
+    Refine an existing color palette based on user instructions.
+    
+    Args:
+        request: RefinePaletteRequest with colors, instruction, and vibe
+    
+    Returns:
+        Refined palette with 5 hex color codes and descriptions
+    """
+    try:
+        if DEBUG:
+            logger.info(f"🎨 Refine palette: instruction='{request.instruction[:50]}...', vibe='{request.vibe}'")
+        
+        palette = await llm_service.refine_palette(request.colors, request.instruction, request.vibe)
+        
+        if DEBUG:
+            logger.info(f"✅ Palette refined successfully")
+        
+        return {
+            "success": True,
+            "palette": palette,
+            "instruction": request.instruction,
+            "vibe": request.vibe
+        }
+    except Exception as e:
+        if DEBUG:
+            logger.error(f"❌ Error refining palette: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=400,
             content={"success": False, "error": str(e)}

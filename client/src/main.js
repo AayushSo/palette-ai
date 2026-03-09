@@ -2,6 +2,32 @@
 // For local dev: http://localhost:8000
 // For production: automatically uses Vercel env variable
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const DEBUG_MODE = import.meta.env.VITE_DEBUG === "true" || true; // Enable debug by default
+
+// Import ntc.js for color name lookup
+import './ntc.js';
+
+console.log("🚀 [App Init] Starting Color Palette App");
+console.log("   API_BASE_URL:", API_BASE_URL);
+console.log("   DEBUG_MODE:", DEBUG_MODE);
+
+// Initialize ntc.js
+if (window.ntc) {
+  window.ntc.init();
+  console.log("✅ [ntc.js] Color name lookup initialized");
+}
+
+// Check API health on load
+(async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/`);
+    const data = await response.json();
+    console.log("✅ [API Health] Backend is running");
+    console.log("   debug:", data.debug);
+  } catch (error) {
+    console.error("❌ [API Health] Failed to reach backend:", error.message);
+  }
+})();
 
 // DOM Elements
 const tabButtons = document.querySelectorAll(".tab-button");
@@ -118,6 +144,10 @@ function applyVibeBackground(vibe) {
 async function extractPalette(imageUrl) {
   showLoading(true);
   try {
+    console.log("📷 [extractPalette] Starting request...");
+    console.log("   imageUrl:", imageUrl);
+    console.log("   endpoint:", `${API_BASE_URL}/api/extract-palette`);
+    
     const response = await fetch(`${API_BASE_URL}/api/extract-palette`, {
       method: "POST",
       headers: {
@@ -126,12 +156,18 @@ async function extractPalette(imageUrl) {
       body: JSON.stringify({ image_url: imageUrl }),
     });
 
+    console.log("✅ [extractPalette] Response received");
+    console.log("   status:", response.status);
+
     if (!response.ok) {
       const errorData = await response.json();
+      console.error("❌ [extractPalette] Error response:", errorData);
       throw new Error(errorData.error || "Failed to extract palette");
     }
 
     const data = await response.json();
+    console.log("📦 [extractPalette] Response data:", data);
+    
     if (data.success) {
       displayPalette(data.palette);
       showMessage("Palette extracted successfully!");
@@ -139,6 +175,7 @@ async function extractPalette(imageUrl) {
       throw new Error(data.error || "Unknown error");
     }
   } catch (error) {
+    console.error("❌ [extractPalette] Error:", error.message);
     showError(error.message);
   } finally {
     showLoading(false);
@@ -151,6 +188,11 @@ async function extractPalette(imageUrl) {
 async function generatePalette(prompt, vibe) {
   showLoading(true);
   try {
+    console.log("🎨 [generatePalette] Starting request...");
+    console.log("   prompt:", prompt);
+    console.log("   vibe:", vibe);
+    console.log("   endpoint:", `${API_BASE_URL}/api/generate-palette`);
+    
     const response = await fetch(`${API_BASE_URL}/api/generate-palette`, {
       method: "POST",
       headers: {
@@ -159,12 +201,21 @@ async function generatePalette(prompt, vibe) {
       body: JSON.stringify({ prompt, vibe }),
     });
 
+    console.log("✅ [generatePalette] Response received");
+    console.log("   status:", response.status);
+    console.log("   ok:", response.ok);
+
     if (!response.ok) {
       const errorData = await response.json();
+      console.error("❌ [generatePalette] Error response:", errorData);
       throw new Error(errorData.error || "Failed to generate palette");
     }
 
     const data = await response.json();
+    console.log("📦 [generatePalette] Response data:", data);
+    console.log("   success:", data.success);
+    console.log("   colors count:", data.palette?.colors?.length);
+    
     if (data.success) {
       displayPalette(data.palette.colors);
       showMessage("Palette generated successfully!");
@@ -172,6 +223,7 @@ async function generatePalette(prompt, vibe) {
       throw new Error(data.error || "Unknown error");
     }
   } catch (error) {
+    console.error("❌ [generatePalette] Error:", error.message);
     showError(error.message);
   } finally {
     showLoading(false);
@@ -182,19 +234,47 @@ async function generatePalette(prompt, vibe) {
  * Display palette in the UI
  */
 function displayPalette(colors) {
+  console.log("🎨 [displayPalette] Rendering palette");
+  console.log("   colors:", colors);
+  console.log("   type of first color:", typeof colors[0]);
+  
   currentPalette = colors;
   paletteGrid.innerHTML = "";
 
-  colors.forEach((color) => {
+  colors.forEach((colorData, index) => {
+    // Handle both old format (string or object) and new format (just hex strings)
+    let hex;
+    let colorName = "";
+    
+    if (typeof colorData === "string") {
+      // New format: just hex string
+      hex = colorData;
+      // Get color name from ntc.js
+      if (window.ntc) {
+        const nameMatch = window.ntc.name(hex);
+        colorName = nameMatch[1]; // Color name
+        console.log(`   [${index}] ${hex} -> "${colorName}"${nameMatch[2] ? ' (exact)' : ' (closest)'}`);
+      }
+    } else if (typeof colorData === "object") {
+      // Old format: object with hex and description
+      hex = colorData.hex;
+      colorName = colorData.description || "";
+      console.log(`   [${index}] hex: ${hex}, description: ${colorName}`);
+    }
+    
     const colorCard = document.createElement("div");
     colorCard.className = "color-card";
+    
+    let colorInfoHTML = `<code>${hex}</code>`;
+    if (colorName) {
+      colorInfoHTML += `<p class="color-name">${colorName}</p>`;
+    }
+    colorInfoHTML += `<button class="btn-copy" onclick="copyToClipboard('${hex}')" title="Copy hex code">📋</button>`;
+    
     colorCard.innerHTML = `
-      <div class="color-preview" style="background-color: ${color}"></div>
+      <div class="color-preview" style="background-color: ${hex}"></div>
       <div class="color-info">
-        <code>${color}</code>
-        <button class="btn-copy" onclick="copyToClipboard('${color}')" title="Copy hex code">
-          📋
-        </button>
+        ${colorInfoHTML}
       </div>
     `;
     paletteGrid.appendChild(colorCard);
@@ -202,6 +282,7 @@ function displayPalette(colors) {
 
   paletteContainer.classList.remove("hidden");
   paletteContainer.scrollIntoView({ behavior: "smooth" });
+  console.log("✅ [displayPalette] Palette rendered successfully");
 }
 
 /**

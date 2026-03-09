@@ -1,22 +1,120 @@
 from typing import List, Dict
 import os
+import json
+import re
+import logging
+import tempfile
+from datetime import datetime
+from pathlib import Path
 import httpx
+
+from core.prompts import (
+    PALETTE_GENERATION_SYSTEM_PROMPT,
+    PALETTE_GENERATION_USER_TEMPLATE,
+    PALETTE_REFINEMENT_USER_TEMPLATE
+)
+
+# Configure logging
+logger = logging.getLogger(__name__)
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 
 class LLMPaletteService:
     """
     Service for generating color palettes from text prompts using an LLM.
     Provides abstraction for different LLM providers (OpenAI, Anthropic, etc).
+    Currently implemented: Google Gemini API
     """
 
     def __init__(self):
         """Initialize the LLM service with API keys from environment."""
         self.api_key = os.getenv("LLM_API_KEY")
         self.provider = os.getenv("LLM_PROVIDER", "gemini")  # gemini, openai, anthropic, etc.
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+        self.gemini_api_version = os.getenv("GEMINI_API_VERSION", "v1")
+        self.gemini_base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
+        # Persist raw LLM responses for manual verification.
+        self.save_raw_responses = os.getenv("LLM_SAVE_RAW_RESPONSES", "true").lower() == "true"
+        self.debug_dump_dir = Path(tempfile.gettempdir()) / "palette-ai-llm"
+        
+        if DEBUG:
+            logger.info(f"🔧 Initializing LLMPaletteService: provider={self.provider}")
+            logger.info(f"   model={self.gemini_model}, api_version={self.gemini_api_version}")
+        
+        if self.provider == "gemini":
+            if not self.api_key:
+                raise ValueError("LLM_API_KEY environment variable not set for Gemini API")
+            if DEBUG:
+                logger.info(f"   ✅ Gemini API configured via REST endpoint")
+
+    def _save_raw_response(self, response_text: str, request_type: str, context: Dict[str, str]) -> None:
+        """Save raw LLM response into a temp file for easier local debugging."""
+        if not self.save_raw_responses:
+            return
+
+        self.debug_dump_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        filename = f"{request_type}-{timestamp}.json"
+        output_path = self.debug_dump_dir / filename
+
+        payload = {
+            "timestamp": datetime.now().isoformat(),
+            "request_type": request_type,
+            "provider": self.provider,
+            "model": self.gemini_model,
+            "api_version": self.gemini_api_version,
+            "context": context,
+            "raw_response": response_text,
+        }
+
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        logger.info(f"   💾 Raw LLM response saved: {output_path}")
+
+    async def _gemini_generate_text(self, message: str, request_type: str, context: Dict[str, str]) -> str:
+        """Call Gemini REST API and return the first candidate text."""
+        endpoint = (
+            f"{self.gemini_base_url}/{self.gemini_api_version}/models/"
+            f"{self.gemini_model}:generateContent?key={self.api_key}"
+        )
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": message}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 200,
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(endpoint, json=payload)
+
+        if response.status_code >= 400:
+            raise ValueError(
+                f"Gemini API HTTP {response.status_code}: {response.text[:500]}"
+            )
+
+        response_json = response.json()
+        text = (
+            response_json.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+
+        if not text:
+            raise ValueError(f"Gemini returned empty text. Response: {json.dumps(response_json)[:500]}")
+
+        self._save_raw_response(response_text=text, request_type=request_type, context=context)
+        return text
 
     async def generate_palette(self, prompt: str, vibe: str = "vibrant") -> Dict:
         """
-        Generate a color palette from a text prompt.
+        Generate a color palette from a text prompt using LLM.
         
         Args:
             prompt: Description of the desired palette
@@ -26,84 +124,220 @@ class LLMPaletteService:
             Dictionary containing palette and descriptions
         """
         try:
-            # TODO: Implement actual LLM API call
-            # This is a placeholder that returns a dummy response
+            if DEBUG:
+                logger.info(f"🎨 LLMService.generate_palette() called")
+                logger.info(f"   prompt: {prompt}")
+                logger.info(f"   vibe: {vibe}")
             
-            palette = self._get_dummy_palette(vibe)
+            if self.provider == "gemini":
+                return await self._call_gemini_api(prompt, vibe)
+            else:
+                raise ValueError(f"Unsupported provider: {self.provider}")
+        
+        except Exception as e:
+            logger.error(f"Error generating palette from LLM: {str(e)}")
+            raise Exception(f"Error generating palette from LLM: {str(e)}")
+
+    async def _call_gemini_api(self, prompt: str, vibe: str) -> Dict:
+        """
+        Call Google Gemini API to generate palette.
+        
+        Args:
+            prompt: User's palette description
+            vibe: Desired mood/style
+        
+        Returns:
+            Generated palette with colors and descriptions
+        """
+        try:
+            if DEBUG:
+                logger.info(
+                    f"   🔗 Calling Gemini API via REST: model={self.gemini_model}, version={self.gemini_api_version}"
+                )
             
+            # Build the user message from template
+            user_message = PALETTE_GENERATION_USER_TEMPLATE.format(
+                prompt=prompt,
+                vibe=vibe
+            )
+            
+            response_text = await self._gemini_generate_text(
+                message=f"{PALETTE_GENERATION_SYSTEM_PROMPT}\n\n{user_message}",
+                request_type="generate",
+                context={"prompt": prompt, "vibe": vibe},
+            )
+
+            if DEBUG:
+                logger.info(f"   ✅ Gemini API responded")
+            
+            if DEBUG:
+                logger.info(f"   📦 Response length: {len(response_text)} chars")
+                logger.info(f"   📝 Raw response: {response_text}")  # Show full response
+            
+            # Try to extract JSON array from response - be more aggressive
+            # First, try to find JSON with markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find array anywhere in text (handles preambles like "Here is the JSON:")
+                json_match = re.search(r'\[(?:\s*"#[A-Fa-f0-9]{6}"\s*,?\s*)+\]', response_text, re.DOTALL)
+                if not json_match:
+                    logger.error(f"   ❌ Could not find JSON array in response: {response_text}")
+                    raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
+                json_str = json_match.group()
+            
+            if DEBUG:
+                logger.info(f"   🔍 Extracted JSON string: {json_str[:200]}...")
+            
+            # Clean up common JSON issues
+            json_str = json_str.replace('\n', ' ').replace('\r', '')
+            # Remove trailing commas before closing brackets
+            json_str = re.sub(r',\s*]', ']', json_str)
+            
+            try:
+                hex_colors = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"   ❌ JSON Parse Error at position {e.pos}")
+                logger.error(f"   📝 Problematic JSON around error:")
+                start = max(0, e.pos - 100)
+                end = min(len(json_str), e.pos + 100)
+                logger.error(f"      ...{json_str[start:end]}...")
+                logger.error(f"   📝 Full JSON string: {json_str}")
+                raise
+            
+            # Validate and return
+            if not isinstance(hex_colors, list) or len(hex_colors) != 5:
+                raise ValueError(f"Response must be an array of exactly 5 hex codes, got {len(hex_colors) if isinstance(hex_colors, list) else 'not an array'}")
+            
+            if DEBUG:
+                logger.info(f"   🎨 Parsed {len(hex_colors)} hex codes from response")
+            
+            # Return as simple array of hex color strings
             return {
-                "colors": palette,
-                "descriptions": self._get_color_descriptions(palette),
+                "colors": hex_colors,
                 "vibe": vibe,
                 "prompt": prompt
             }
-        
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+            raise Exception(f"Failed to parse LLM response as JSON: {str(e)}")
         except Exception as e:
-            raise Exception(f"Error generating palette from LLM: {str(e)}")
+            logger.error(f"Error calling Gemini API: {str(e)}")
+            raise Exception(f"Error calling Gemini API: {str(e)}")
 
-    async def _call_openai_api(self, prompt: str, vibe: str) -> Dict:
+    async def refine_palette(self, current_palette: List[Dict], instruction: str, vibe: str) -> Dict:
         """
-        Call OpenAI API to generate palette.
+        Refine an existing color palette based on user instructions.
         
         Args:
-            prompt: User's palette description
-            vibe: Desired mood/style
+            current_palette: List of current color objects with hex and description
+            instruction: User's modification instruction
+            vibe: Desired mood/style to maintain
         
         Returns:
-            Generated palette with colors and descriptions
+            Refined palette with colors and descriptions
         """
-        # Placeholder for OpenAI API implementation
-        # TODO: Implement with actual API call
-        pass
+        try:
+            if DEBUG:
+                logger.info(f"🎨 LLMService.refine_palette() called")
+                logger.info(f"   instruction: {instruction}")
+                logger.info(f"   vibe: {vibe}")
+                logger.info(f"   current colors: {len(current_palette)}")
+            
+            # Format current palette for the prompt (just hex codes)
+            if isinstance(current_palette[0], dict):
+                # If palette has dicts with 'hex' key
+                current_palette_str = ", ".join([color.get('hex', color) for color in current_palette])
+            else:
+                # If palette is just hex strings
+                current_palette_str = ", ".join(current_palette)
+            
+            # Build the user message from refinement template
+            user_message = PALETTE_REFINEMENT_USER_TEMPLATE.format(
+                current_palette=current_palette_str,
+                instruction=instruction,
+                vibe=vibe
+            )
 
-    async def _call_anthropic_api(self, prompt: str, vibe: str) -> Dict:
-        """
-        Call Anthropic (Claude) API to generate palette.
-        
-        Args:
-            prompt: User's palette description
-            vibe: Desired mood/style
-        
-        Returns:
-            Generated palette with colors and descriptions
-        """
-        # Placeholder for Anthropic API implementation
-        # TODO: Implement with actual API call
-        pass
+            if DEBUG:
+                logger.info(
+                    f"   🔗 Calling Gemini API via REST: model={self.gemini_model}, version={self.gemini_api_version}"
+                )
 
-    def _get_dummy_palette(self, vibe: str) -> List[str]:
-        """Get a dummy palette based on vibe."""
-        palettes = {
-            "vibrant": ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8"],
-            "minimal": ["#000000", "#FFFFFF", "#666666", "#CCCCCC", "#999999"],
-            "dark": ["#1A1A1A", "#2D2D2D", "#404040", "#535353", "#666666"],
-            "pastel": ["#FFB3BA", "#FFCCCB", "#FFFFBA", "#BAE1BA", "#BAC7FF"],
-            "warm": ["#FF6B35", "#F7931E", "#FDB833", "#F37021", "#C1272D"],
-            "cool": ["#0096FF", "#2E8BC0", "#19547B", "#6093D9", "#4A90E2"],
-        }
-        return palettes.get(vibe, palettes["vibrant"])
+            response_text = await self._gemini_generate_text(
+                message=f"{PALETTE_GENERATION_SYSTEM_PROMPT}\n\n{user_message}",
+                request_type="refine",
+                context={"instruction": instruction, "vibe": vibe},
+            )
 
-    def _get_color_descriptions(self, colors: List[str]) -> List[str]:
-        """Get descriptive names for colors."""
-        descriptions = [
-            "Primary accent",
-            "Secondary accent",
-            "Tertiary accent",
-            "Complementary",
-            "Supporting color"
-        ]
-        return descriptions[:len(colors)]
+            if DEBUG:
+                logger.info(f"   ✅ Gemini API responded")
+            
+            if DEBUG:
+                logger.info(f"   📦 Response length: {len(response_text)} chars")
+                logger.info(f"   📝 Raw response: {response_text}")
+            
+            # Try to extract JSON array from response - be more aggressive
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find array anywhere in text (handles preambles)
+                json_match = re.search(r'\[(?:\s*"#[A-Fa-f0-9]{6}"\s*,?\s*)+\]', response_text, re.DOTALL)
+                if not json_match:
+                    logger.error(f"   ❌ Could not find JSON array in response: {response_text}")
+                    raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
+                json_str = json_match.group()
+            
+            if DEBUG:
+                logger.info(f"   🔍 Extracted JSON string: {json_str[:200]}...")
+            
+            # Clean up common JSON issues
+            json_str = json_str.replace('\n', ' ').replace('\r', '')
+            json_str = re.sub(r',\s*]', ']', json_str)
+            
+            try:
+                hex_colors = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"   ❌ JSON Parse Error at position {e.pos}")
+                logger.error(f"   📝 Problematic JSON around error:")
+                start = max(0, e.pos - 100)
+                end = min(len(json_str), e.pos + 100)
+                logger.error(f"      ...{json_str[start:end]}...")
+                logger.error(f"   📝 Full JSON string: {json_str}")
+                raise
+            
+            # Validate and return
+            if not isinstance(hex_colors, list) or len(hex_colors) != 5:
+                raise ValueError(f"Response must be an array of exactly 5 hex codes, got {len(hex_colors) if isinstance(hex_colors, list) else 'not an array'}")
+            
+            if DEBUG:
+                logger.info(f"   🎨 Refined palette with {len(hex_colors)} hex codes")
+            
+            return {
+                "colors": hex_colors,
+                "vibe": vibe,
+                "instruction": instruction
+            }
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+            raise Exception(f"Failed to parse LLM response as JSON: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error refining palette: {str(e)}")
+            raise Exception(f"Error refining palette: {str(e)}")
 
     def validate_hex_color(self, hex_color: str) -> bool:
         """
         Validate that a string is a valid hex color code.
         
         Args:
-            hex_color: Color code (e.g., '#FF6B6B')
+            hex_color: String to validate (e.g., "#FF6B6B" or "FF6B6B")
         
         Returns:
-            True if valid, False otherwise
+            True if valid hex color, False otherwise
         """
-        import re
-        pattern = r"^#(?:[0-9a-fA-F]{3}){1,2}$"
-        return bool(re.match(pattern, hex_color))
+        hex_color = hex_color.lstrip("#")
+        return len(hex_color) == 6 and all(c in "0123456789ABCDEFabcdef" for c in hex_color)
