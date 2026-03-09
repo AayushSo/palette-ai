@@ -8,9 +8,12 @@
 </head>
 <body>
     <div id="app">
-        <header>
-            <h1>🎨 Color Palette Extractor</h1>
-            <p>Extract beautiful color palettes from images or generate them from text</p>
+        <header id="mainHeader">
+            <h1 id="headerTitle" style="cursor: pointer;">🎨 Color Palette Extractor</h1>
+            <div id="quickSearch" class="quick-search hidden">
+                <input type="text" id="quickPrompt" placeholder="Describe a new palette..." />
+                <button id="quickGenerateBtn" class="quick-generate-btn">Update</button>
+            </div>
         </header>
 
         <main>
@@ -69,18 +72,17 @@
                     <p id="errorMessage"></p>
                     <button onclick="closeError()" class="btn-secondary">Dismiss</button>
                 </div>
-
-                <!-- Palette Display -->
-                <div id="paletteContainer" class="palette-container hidden">
-                    <h2>Generated Palette</h2>
-                    <div id="paletteGrid" class="palette-grid"></div>
-                    <div class="palette-actions">
-                        <button id="copyAllBtn" class="btn-secondary">Copy All Hex Codes</button>
-                        <button id="exportBtn" class="btn-secondary">Export as JSON</button>
-                    </div>
-                </div>
             </div>
         </main>
+
+        <!-- Palette Display -->
+        <div id="paletteContainer" class="palette-container hidden">
+            <div id="paletteGrid" class="palette-grid"></div>
+            <div class="palette-actions">
+                <button id="copyAllBtn" class="btn-secondary">Copy All Hex Codes</button>
+                <button id="exportBtn" class="btn-secondary">Export as JSON</button>
+            </div>
+        </div>
 
         <footer>
             <p>&copy; 2024 Color Palette Extractor | Powered by FastAPI & Vite</p>

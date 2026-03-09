@@ -44,13 +44,23 @@ const paletteContainer = document.getElementById("paletteContainer");
 const paletteGrid = document.getElementById("paletteGrid");
 const copyAllBtn = document.getElementById("copyAllBtn");
 const exportBtn = document.getElementById("exportBtn");
+const headerTitle = document.getElementById("headerTitle");
+const quickSearch = document.getElementById("quickSearch");
+const quickPrompt = document.getElementById("quickPrompt");
+const quickGenerateBtn = document.getElementById("quickGenerateBtn");
 
 // Store current palette for export/copy
 let currentPalette = [];
+let currentVibe = "vibrant";
 
 // ====================
 // Event Listeners
 // ====================
+
+// Go back to home when header title is clicked
+headerTitle.addEventListener("click", () => {
+  goBackToHome();
+});
 
 // Tab switching
 tabButtons.forEach((button) => {
@@ -62,7 +72,8 @@ tabButtons.forEach((button) => {
 
 // Update background when vibe changes
 vibeSelect.addEventListener("change", (e) => {
-  applyVibeBackground(e.target.value);
+  currentVibe = e.target.value;
+  applyVibeBackground(currentVibe);
 });
 
 // Extract palette from image
@@ -86,6 +97,23 @@ generateBtn.addEventListener("click", async () => {
   await generatePalette(prompt, vibe);
 });
 
+// Quick search generate
+quickGenerateBtn.addEventListener("click", async () => {
+  const prompt = quickPrompt.value.trim();
+  if (!prompt) {
+    showError("Please describe your desired palette");
+    return;
+  }
+  await generatePalette(prompt, currentVibe);
+});
+
+// Quick search on Enter key
+quickPrompt.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    quickGenerateBtn.click();
+  }
+});
+
 // Copy all hex codes
 copyAllBtn.addEventListener("click", () => {
   const hexCodes = currentPalette.join("\n");
@@ -107,6 +135,20 @@ exportBtn.addEventListener("click", () => {
 // ====================
 // Core Functions
 // ====================
+
+/**
+ * Return to home screen (hide palette and show form)
+ */
+function goBackToHome() {
+  document.body.classList.remove("palette-visible");
+  headerTitle.classList.remove("hidden");
+  quickSearch.classList.add("hidden");
+  paletteContainer.classList.add("hidden");
+  paletteGrid.innerHTML = "";
+  
+  // Reset quick search input
+  quickPrompt.value = "";
+}
 
 /**
  * Switch between Extract and Generate tabs
@@ -231,6 +273,42 @@ async function generatePalette(prompt, vibe) {
 }
 
 /**
+ * Calculate relative luminance of a color
+ * Returns a value between 0 (darkest) and 1 (lightest)
+ * Based on WCAG formula: https://www.w3.org/TR/WCAG20-TECHS/G17.html
+ */
+function getLuminance(hex) {
+  // Convert hex to RGB
+  const rgb = parseInt(hex.substring(1), 16);
+  const r = (rgb >> 16) & 0xff;
+  const g = (rgb >> 8) & 0xff;
+  const b = (rgb >> 0) & 0xff;
+  
+  // Convert to 0-1 range and apply gamma correction
+  const rsRGB = r / 255;
+  const gsRGB = g / 255;
+  const bsRGB = b / 255;
+  
+  const rLinear = rsRGB <= 0.03928 ? rsRGB / 12.92 : Math.pow((rsRGB + 0.055) / 1.055, 2.4);
+  const gLinear = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
+  const bLinear = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
+  
+  // Calculate luminance
+  return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
+}
+
+/**
+ * Determine if text should be light or dark based on background color
+ * Returns 'light-text' for light text on dark background
+ * Returns 'dark-text' for dark text on light background
+ */
+function getTextColorClass(hex) {
+  const luminance = getLuminance(hex);
+  // If luminance is above 0.5, use dark text; otherwise use light text
+  return luminance > 0.5 ? 'dark-text' : 'light-text';
+}
+
+/**
  * Display palette in the UI
  */
 function displayPalette(colors) {
@@ -262,25 +340,30 @@ function displayPalette(colors) {
       console.log(`   [${index}] hex: ${hex}, description: ${colorName}`);
     }
     
+    // Determine text color based on background luminance
+    const textColorClass = getTextColorClass(hex);
+    
     const colorCard = document.createElement("div");
     colorCard.className = "color-card";
-    
-    let colorInfoHTML = `<code>${hex}</code>`;
-    if (colorName) {
-      colorInfoHTML += `<p class="color-name">${colorName}</p>`;
-    }
-    colorInfoHTML += `<button class="btn-copy" onclick="copyToClipboard('${hex}')" title="Copy hex code">📋</button>`;
+    colorCard.onclick = () => copyToClipboard(hex);
     
     colorCard.innerHTML = `
       <div class="color-preview" style="background-color: ${hex}"></div>
-      <div class="color-info">
-        ${colorInfoHTML}
+      <div class="color-info ${textColorClass}">
+        <code>${hex}</code>
+        <p class="color-name">${colorName}</p>
       </div>
     `;
     paletteGrid.appendChild(colorCard);
   });
 
   paletteContainer.classList.remove("hidden");
+  
+  // Toggle to full-screen palette view
+  document.body.classList.add("palette-visible");
+  headerTitle.classList.add("hidden");
+  quickSearch.classList.remove("hidden");
+  
   paletteContainer.scrollIntoView({ behavior: "smooth" });
   console.log("✅ [displayPalette] Palette rendered successfully");
 }

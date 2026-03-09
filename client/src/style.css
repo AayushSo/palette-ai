@@ -12,6 +12,10 @@ html {
   scroll-behavior: smooth;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, Cantarell, sans-serif;
@@ -64,6 +68,50 @@ body.vibe-cool {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Palette visible state */
+body.palette-visible {
+  overflow: hidden;
+}
+
+body.palette-visible #mainHeader {
+  padding: 0.5rem 1rem;
+  background: #f8f8f8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body.palette-visible #headerTitle {
+  display: block !important;
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  margin: 0 2rem 0 0;
+}
+
+body.palette-visible .quick-search {
+  margin: 0;
+  flex: 1;
+}
+
+body.palette-visible main {
+  display: none;
+}
+
+body.palette-visible footer {
+  display: none;
+}
+
+body.palette-visible #paletteContainer {
+  flex: 1;
+  display: flex !important;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
 }
 
 /* ==================
@@ -71,24 +119,78 @@ body.vibe-cool {
    ================== */
 
 header {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 3rem 2rem;
-  text-align: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: #f8f8f8;
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 100;
+  flex-shrink: 0;
 }
 
 header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 1.5rem;
+  margin: 0;
+  color: #333;
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
+}
+
+header h1:hover {
+  opacity: 0.7;
 }
 
 header p {
   color: #666;
   font-size: 1.1rem;
+}
+
+/* Quick Search Bar */
+.quick-search {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1;
+  max-width: 500px;
+  margin: 0 0 0 2rem;
+}
+
+.quick-search.hidden {
+  display: none;
+}
+
+.quick-search input {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  transition: border-color 0.3s ease;
+}
+
+.quick-search input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.quick-generate-btn {
+  padding: 0.5rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.quick-generate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 /* ==================
@@ -98,6 +200,7 @@ header p {
 main {
   flex: 1;
   padding: 2rem;
+  overflow-y: auto;
 }
 
 .container {
@@ -244,16 +347,7 @@ textarea {
 }
 
 .btn-copy {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2rem;
-  padding: 0.25rem 0.5rem;
-  transition: transform 0.2s ease;
-}
-
-.btn-copy:hover {
-  transform: scale(1.2);
+  display: none;
 }
 
 /* ==================
@@ -320,12 +414,18 @@ textarea {
    ================== */
 
 .palette-container {
-  padding: 2rem;
-  border-top: 1px solid #e0e0e0;
+  padding: 0;
+  border-top: none;
+  display: none;
 }
 
 .palette-container.hidden {
   display: none;
+}
+
+body.palette-visible .palette-container {
+  display: flex !important;
+  flex-direction: column;
 }
 
 .palette-container h2 {
@@ -334,55 +434,118 @@ textarea {
 }
 
 .palette-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  width: 100%;
+}
+
+body.palette-visible .palette-grid {
+  flex: 1;
+  flex-direction: row;
+  height: 100%;
 }
 
 .color-card {
   background: white;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
-  transition: all 0.3s ease;
+  transition: none;
   cursor: pointer;
-}
-
-.color-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-  border-color: #667eea;
-}
-
-.color-preview {
-  height: 120px;
+  position: relative;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
   width: 100%;
 }
 
+/* Vertical column layout when palette is visible */
+body.palette-visible .color-card {
+  min-height: 0;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+}
+
+.color-card:hover {
+  transform: none;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.3);
+  border-color: transparent;
+}
+
+body.palette-visible .color-card:hover {
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+.color-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+}
+
 .color-info {
-  padding: 1rem;
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
 .color-info code {
   font-family: "Courier New", monospace;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #667eea;
+  font-size: 2rem;
+  font-weight: 700;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  backdrop-filter: none;
+  transition: all 0.2s ease;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.color-card:hover .color-info code {
+  transform: scale(1.1);
+}
+
+.color-info.light-text code {
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.color-info.dark-text code {
+  color: #000;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.3);
 }
 
 .color-info .color-name {
+  display: block;
   font-size: 0.75rem;
-  color: #666;
-  margin: 0.25rem 0 0 0;
   font-style: italic;
-  flex-basis: 100%;
-  text-align: left;
+  margin: 0;
+  text-align: center;
+  max-width: 120px;
+}
+
+.color-info.light-text .color-name {
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.color-info.dark-text .color-name {
+  color: #000;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
 /* ==================
@@ -390,15 +553,7 @@ textarea {
    ================== */
 
 .palette-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-@media (max-width: 600px) {
-  .palette-actions {
-    grid-template-columns: 1fr;
-  }
+  display: none;
 }
 
 /* ==================
@@ -448,11 +603,11 @@ footer {
 
 @media (max-width: 768px) {
   header h1 {
-    font-size: 2rem;
+    font-size: 1.2rem;
   }
 
   header p {
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   main {
@@ -463,22 +618,41 @@ footer {
     padding: 1.5rem;
   }
 
-  .palette-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  .color-card {
+    min-height: 100px;
   }
 
-  .color-preview {
-    height: 100px;
+  .color-info code {
+    font-size: 1.5rem;
+  }
+  
+  body.palette-visible .color-info code {
+    font-size: 1.5rem;
+  }
+  
+  .quick-search {
+    width: 100%;
+    margin: 0.5rem 0 0 0 !important;
+  }
+  
+  .quick-search input {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+  }
+  
+  .quick-generate-btn {
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
   }
 }
 
 @media (max-width: 480px) {
   header {
-    padding: 2rem 1rem;
+    padding: 0.5rem 1rem;
   }
 
   header h1 {
-    font-size: 1.5rem;
+    font-size: 1rem;
   }
 
   .tab-button {
@@ -486,22 +660,15 @@ footer {
     font-size: 0.9rem;
   }
 
-  .palette-grid {
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 0.75rem;
-  }
-
   .color-card {
-    border-radius: 6px;
-  }
-
-  .color-info {
-    padding: 0.75rem;
-    flex-direction: column;
-    text-align: center;
+    min-height: 80px;
   }
 
   .color-info code {
-    font-size: 0.8rem;
+    font-size: 1.2rem;
+  }
+  
+  body.palette-visible .color-info code {
+    font-size: 1.2rem;
   }
 }
