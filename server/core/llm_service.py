@@ -12,7 +12,7 @@ class LLMPaletteService:
     def __init__(self):
         """Initialize the LLM service with API keys from environment."""
         self.api_key = os.getenv("LLM_API_KEY")
-        self.provider = os.getenv("LLM_PROVIDER", "openai")  # openai, anthropic, etc.
+        self.provider = os.getenv("LLM_PROVIDER", "gemini")  # gemini, openai, anthropic, etc.
 
     async def generate_palette(self, prompt: str, vibe: str = "vibrant") -> Dict:
         """
