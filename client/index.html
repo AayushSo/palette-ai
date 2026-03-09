@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Palette Extractor</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>🎨 Color Palette Extractor</h1>
+            <p>Extract beautiful color palettes from images or generate them from text</p>
+        </header>
+
+        <main>
+            <div class="container">
+                <!-- Tab Navigation -->
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="extract">Extract from Image</button>
+                    <button class="tab-button" data-tab="generate">Generate from Text</button>
+                </div>
+
+                <!-- Extract Tab -->
+                <div id="extract" class="tab-content active">
+                    <div class="form-group">
+                        <label for="imageUrl">Image URL:</label>
+                        <input 
+                            type="text" 
+                            id="imageUrl" 
+                            placeholder="Enter image URL (e.g., https://example.com/image.jpg)"
+                        >
+                    </div>
+                    <button id="extractBtn" class="btn-primary">Extract Palette</button>
+                </div>
+
+                <!-- Generate Tab -->
+                <div id="generate" class="tab-content">
+                    <div class="form-group">
+                        <label for="prompt">Describe your palette:</label>
+                        <textarea 
+                            id="prompt" 
+                            placeholder="e.g., 'Ocean sunset with warm oranges and cool blues'"
+                            rows="4"
+                        ></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="vibe">Vibe:</label>
+                        <select id="vibe">
+                            <option value="vibrant">Vibrant</option>
+                            <option value="minimal">Minimal</option>
+                            <option value="dark">Dark</option>
+                            <option value="pastel">Pastel</option>
+                            <option value="warm">Warm</option>
+                            <option value="cool">Cool</option>
+                        </select>
+                    </div>
+                    <button id="generateBtn" class="btn-primary">Generate Palette</button>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Processing...</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="error" class="error hidden">
+                    <p id="errorMessage"></p>
+                    <button onclick="closeError()" class="btn-secondary">Dismiss</button>
+                </div>
+
+                <!-- Palette Display -->
+                <div id="paletteContainer" class="palette-container hidden">
+                    <h2>Generated Palette</h2>
+                    <div id="paletteGrid" class="palette-grid"></div>
+                    <div class="palette-actions">
+                        <button id="copyAllBtn" class="btn-secondary">Copy All Hex Codes</button>
+                        <button id="exportBtn" class="btn-secondary">Export as JSON</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Color Palette Extractor | Powered by FastAPI & Vite</p>
+        </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
