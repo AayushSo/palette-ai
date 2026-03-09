@@ -14,8 +14,8 @@ app = FastAPI(title="Color Palette Extraction API", version="1.0.0")
 
 # Configure CORS
 allowed_origins = [
-    "http://localhost:5174",  # Vite dev server
-    "https://yourdomain.vercel.app",  # TODO: Update with production Vercel URL
+    "http://localhost:5174",  # Vite dev server (local)
+    "https://palette-ai-delta.vercel.app",  # Production Vercel URL
 ]
 
 app.add_middleware(

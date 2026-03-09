@@ -17,4 +17,5 @@ export default defineConfig({
       process.env.VITE_API_URL || 'http://localhost:8000'
     ),
   },
+  envPrefix: 'VITE_',
 })
