@@ -47,6 +47,7 @@ const exportBtn = document.getElementById("exportBtn");
 const headerTitle = document.getElementById("headerTitle");
 const quickSearch = document.getElementById("quickSearch");
 const quickPrompt = document.getElementById("quickPrompt");
+const quickVibe = document.getElementById("quickVibe");
 const quickGenerateBtn = document.getElementById("quickGenerateBtn");
 
 // Store current palette for export/copy
@@ -97,14 +98,20 @@ generateBtn.addEventListener("click", async () => {
   await generatePalette(prompt, vibe);
 });
 
-// Quick search generate
+// Quick search refine palette
 quickGenerateBtn.addEventListener("click", async () => {
-  const prompt = quickPrompt.value.trim();
-  if (!prompt) {
-    showError("Please describe your desired palette");
+  const instruction = quickPrompt.value.trim();
+  if (!instruction) {
+    showError("Please describe how to refine your palette");
     return;
   }
-  await generatePalette(prompt, currentVibe);
+  const vibe = quickVibe.value;
+  await refinePalette(currentPalette, instruction, vibe);
+});
+
+// Update current vibe when quick vibe selector changes
+quickVibe.addEventListener("change", (e) => {
+  currentVibe = e.target.value;
 });
 
 // Quick search on Enter key
@@ -211,7 +218,7 @@ async function extractPalette(imageUrl) {
     console.log("📦 [extractPalette] Response data:", data);
     
     if (data.success) {
-      displayPalette(data.palette);
+      displayPalette(data.palette, currentVibe);
       showMessage("Palette extracted successfully!");
     } else {
       throw new Error(data.error || "Unknown error");
@@ -259,13 +266,64 @@ async function generatePalette(prompt, vibe) {
     console.log("   colors count:", data.palette?.colors?.length);
     
     if (data.success) {
-      displayPalette(data.palette.colors);
+      displayPalette(data.palette.colors, vibe);
       showMessage("Palette generated successfully!");
     } else {
       throw new Error(data.error || "Unknown error");
     }
   } catch (error) {
     console.error("❌ [generatePalette] Error:", error.message);
+    showError(error.message);
+  } finally {
+    showLoading(false);
+  }
+}
+
+/**
+ * Refine existing palette based on user instruction using LLM
+ */
+async function refinePalette(colors, instruction, vibe) {
+  showLoading(true);
+  try {
+    console.log("✨ [refinePalette] Starting request...");
+    console.log("   current colors:", colors);
+    console.log("   instruction:", instruction);
+    console.log("   vibe:", vibe);
+    console.log("   endpoint:", `${API_BASE_URL}/api/refine-palette`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/refine-palette`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ colors, instruction, vibe }),
+    });
+
+    console.log("✅ [refinePalette] Response received");
+    console.log("   status:", response.status);
+    console.log("   ok:", response.ok);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("❌ [refinePalette] Error response:", errorData);
+      throw new Error(errorData.error || "Failed to refine palette");
+    }
+
+    const data = await response.json();
+    console.log("📦 [refinePalette] Response data:", data);
+    console.log("   success:", data.success);
+    console.log("   colors count:", data.palette?.colors?.length);
+    
+    if (data.success) {
+      displayPalette(data.palette.colors, vibe);
+      showMessage("Palette refined successfully!");
+      // Clear the instruction input after successful refinement
+      quickPrompt.value = "";
+    } else {
+      throw new Error(data.error || "Unknown error");
+    }
+  } catch (error) {
+    console.error("❌ [refinePalette] Error:", error.message);
     showError(error.message);
   } finally {
     showLoading(false);
@@ -311,13 +369,18 @@ function getTextColorClass(hex) {
 /**
  * Display palette in the UI
  */
-function displayPalette(colors) {
+function displayPalette(colors, vibe = "vibrant") {
   console.log("🎨 [displayPalette] Rendering palette");
   console.log("   colors:", colors);
+  console.log("   vibe:", vibe);
   console.log("   type of first color:", typeof colors[0]);
   
   currentPalette = colors;
+  currentVibe = vibe;
   paletteGrid.innerHTML = "";
+  
+  // Update the quick vibe selector to match current vibe
+  quickVibe.value = vibe;
 
   colors.forEach((colorData, index) => {
     // Handle both old format (string or object) and new format (just hex strings)

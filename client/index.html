@@ -11,7 +11,15 @@
         <header id="mainHeader">
             <h1 id="headerTitle" style="cursor: pointer;">🎨 Color Palette Extractor</h1>
             <div id="quickSearch" class="quick-search hidden">
-                <input type="text" id="quickPrompt" placeholder="Describe a new palette..." />
+                <input type="text" id="quickPrompt" placeholder="Refine your palette..." />
+                <select id="quickVibe" class="quick-vibe-select">
+                    <option value="vibrant">Vibrant</option>
+                    <option value="minimal">Minimal</option>
+                    <option value="dark">Dark</option>
+                    <option value="pastel">Pastel</option>
+                    <option value="warm">Warm</option>
+                    <option value="cool">Cool</option>
+                </select>
                 <button id="quickGenerateBtn" class="quick-generate-btn">Update</button>
             </div>
         </header>
