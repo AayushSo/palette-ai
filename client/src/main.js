@@ -4,18 +4,9 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const DEBUG_MODE = import.meta.env.VITE_DEBUG === "true" || true; // Enable debug by default
 
-// Import ntc.js for color name lookup
-import './ntc.js';
-
 console.log("🚀 [App Init] Starting Color Palette App");
 console.log("   API_BASE_URL:", API_BASE_URL);
 console.log("   DEBUG_MODE:", DEBUG_MODE);
-
-// Initialize ntc.js
-if (window.ntc) {
-  window.ntc.init();
-  console.log("✅ [ntc.js] Color name lookup initialized");
-}
 
 // Check API health on load
 (async () => {
@@ -123,7 +114,10 @@ quickPrompt.addEventListener("keypress", (e) => {
 
 // Copy all hex codes
 copyAllBtn.addEventListener("click", () => {
-  const hexCodes = currentPalette.join("\n");
+  // Extract hex codes from palette (handle both string and object formats)
+  const hexCodes = currentPalette.map(color => 
+    typeof color === "string" ? color : color.hex
+  ).join("\n");
   navigator.clipboard.writeText(hexCodes).then(() => {
     showMessage("Copied all hex codes to clipboard!");
   });
@@ -383,25 +377,10 @@ function displayPalette(colors, vibe = "vibrant") {
   quickVibe.value = vibe;
 
   colors.forEach((colorData, index) => {
-    // Handle both old format (string or object) and new format (just hex strings)
-    let hex;
-    let colorName = "";
-    
-    if (typeof colorData === "string") {
-      // New format: just hex string
-      hex = colorData;
-      // Get color name from ntc.js
-      if (window.ntc) {
-        const nameMatch = window.ntc.name(hex);
-        colorName = nameMatch[1]; // Color name
-        console.log(`   [${index}] ${hex} -> "${colorName}"${nameMatch[2] ? ' (exact)' : ' (closest)'}`);
-      }
-    } else if (typeof colorData === "object") {
-      // Old format: object with hex and description
-      hex = colorData.hex;
-      colorName = colorData.description || "";
-      console.log(`   [${index}] hex: ${hex}, description: ${colorName}`);
-    }
+    // Colors should be object format from LLM: { hex, name }
+    const hex = typeof colorData === "string" ? colorData : colorData.hex;
+    const colorName = typeof colorData === "string" ? "" : (colorData.name || "");
+    console.log(`   [${index}] hex: ${hex}, name: ${colorName}`);
     
     // Determine text color based on background luminance
     const textColorClass = getTextColorClass(hex);

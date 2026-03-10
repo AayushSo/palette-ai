@@ -180,8 +180,9 @@ class LLMPaletteService:
             if json_match:
                 json_str = json_match.group(1)
             else:
-                # Try to find array anywhere in text (handles preambles like "Here is the JSON:")
-                json_match = re.search(r'\[(?:\s*"#[A-Fa-f0-9]{6}"\s*,?\s*)+\]', response_text, re.DOTALL)
+                # Try to find array of objects anywhere in text
+                # Look for pattern like [{...}, {...}]
+                json_match = re.search(r'\[\s*\{[^\]]+\}\s*(?:,\s*\{[^\]]+\}\s*)*\]', response_text, re.DOTALL)
                 if not json_match:
                     logger.error(f"   ❌ Could not find JSON array in response: {response_text}")
                     raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
@@ -194,9 +195,10 @@ class LLMPaletteService:
             json_str = json_str.replace('\n', ' ').replace('\r', '')
             # Remove trailing commas before closing brackets
             json_str = re.sub(r',\s*]', ']', json_str)
+            json_str = re.sub(r',\s*}', '}', json_str)
             
             try:
-                hex_colors = json.loads(json_str)
+                color_objects = json.loads(json_str)
             except json.JSONDecodeError as e:
                 logger.error(f"   ❌ JSON Parse Error at position {e.pos}")
                 logger.error(f"   📝 Problematic JSON around error:")
@@ -207,15 +209,20 @@ class LLMPaletteService:
                 raise
             
             # Validate and return
-            if not isinstance(hex_colors, list) or len(hex_colors) != 5:
-                raise ValueError(f"Response must be an array of exactly 5 hex codes, got {len(hex_colors) if isinstance(hex_colors, list) else 'not an array'}")
+            if not isinstance(color_objects, list) or len(color_objects) != 5:
+                raise ValueError(f"Response must be an array of exactly 5 color objects, got {len(color_objects) if isinstance(color_objects, list) else 'not an array'}")
+            
+            # Validate each color object has hex and name
+            for i, color in enumerate(color_objects):
+                if not isinstance(color, dict) or 'hex' not in color or 'name' not in color:
+                    raise ValueError(f"Color object at index {i} must have 'hex' and 'name' fields. Got: {color}")
             
             if DEBUG:
-                logger.info(f"   🎨 Parsed {len(hex_colors)} hex codes from response")
+                logger.info(f"   🎨 Parsed {len(color_objects)} color objects from response")
             
-            # Return as simple array of hex color strings
+            # Return colors with hex and name
             return {
-                "colors": hex_colors,
+                "colors": color_objects,
                 "vibe": vibe,
                 "prompt": prompt
             }
@@ -246,10 +253,13 @@ class LLMPaletteService:
                 logger.info(f"   vibe: {vibe}")
                 logger.info(f"   current colors: {len(current_palette)}")
             
-            # Format current palette for the prompt (just hex codes)
+            # Format current palette for the prompt (showing hex and name if available)
             if isinstance(current_palette[0], dict):
-                # If palette has dicts with 'hex' key
-                current_palette_str = ", ".join([color.get('hex', color) for color in current_palette])
+                # If palette has dicts with 'hex' and 'name' keys
+                if 'name' in current_palette[0]:
+                    current_palette_str = ", ".join([f"{color['hex']} ({color['name']})" for color in current_palette])
+                else:
+                    current_palette_str = ", ".join([color.get('hex', color) for color in current_palette])
             else:
                 # If palette is just hex strings
                 current_palette_str = ", ".join(current_palette)
@@ -284,8 +294,8 @@ class LLMPaletteService:
             if json_match:
                 json_str = json_match.group(1)
             else:
-                # Try to find array anywhere in text (handles preambles)
-                json_match = re.search(r'\[(?:\s*"#[A-Fa-f0-9]{6}"\s*,?\s*)+\]', response_text, re.DOTALL)
+                # Try to find array of objects anywhere in text
+                json_match = re.search(r'\[\s*\{[^\]]+\}\s*(?:,\s*\{[^\]]+\}\s*)*\]', response_text, re.DOTALL)
                 if not json_match:
                     logger.error(f"   ❌ Could not find JSON array in response: {response_text}")
                     raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
@@ -297,9 +307,10 @@ class LLMPaletteService:
             # Clean up common JSON issues
             json_str = json_str.replace('\n', ' ').replace('\r', '')
             json_str = re.sub(r',\s*]', ']', json_str)
+            json_str = re.sub(r',\s*}', '}', json_str)
             
             try:
-                hex_colors = json.loads(json_str)
+                color_objects = json.loads(json_str)
             except json.JSONDecodeError as e:
                 logger.error(f"   ❌ JSON Parse Error at position {e.pos}")
                 logger.error(f"   📝 Problematic JSON around error:")
@@ -310,14 +321,19 @@ class LLMPaletteService:
                 raise
             
             # Validate and return
-            if not isinstance(hex_colors, list) or len(hex_colors) != 5:
-                raise ValueError(f"Response must be an array of exactly 5 hex codes, got {len(hex_colors) if isinstance(hex_colors, list) else 'not an array'}")
+            if not isinstance(color_objects, list) or len(color_objects) != 5:
+                raise ValueError(f"Response must be an array of exactly 5 color objects, got {len(color_objects) if isinstance(color_objects, list) else 'not an array'}")
+            
+            # Validate each color object has hex and name
+            for i, color in enumerate(color_objects):
+                if not isinstance(color, dict) or 'hex' not in color or 'name' not in color:
+                    raise ValueError(f"Color object at index {i} must have 'hex' and 'name' fields. Got: {color}")
             
             if DEBUG:
-                logger.info(f"   🎨 Refined palette with {len(hex_colors)} hex codes")
+                logger.info(f"   🎨 Refined palette with {len(color_objects)} color objects")
             
             return {
-                "colors": hex_colors,
+                "colors": color_objects,
                 "vibe": vibe,
                 "instruction": instruction
             }
