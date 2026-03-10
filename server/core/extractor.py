@@ -44,12 +44,13 @@ class KMeansExtractor(PaletteExtractorStrategy):
         """
         self.num_colors = num_colors
 
-    def extract(self, image_source: str) -> List[str]:
+    def extract(self, image_source: str, vibe: str = "vibrant") -> List[str]:
         """
         Extract colors using K-Means clustering.
         
         Args:
             image_source: URL or file path of the image to process
+            vibe: The mood/style to optimize for in clustering weights
         
         Returns:
             List of hex color codes
@@ -65,9 +66,32 @@ class KMeansExtractor(PaletteExtractorStrategy):
             hsv_pixels = self._rgb_pixels_to_hsv(pixels)
             cartesian_pixels = self._hsv_to_cartesian(hsv_pixels)
 
-            # Apply K-Means in warped Cartesian HSV space.
+            # Calculate weights for every pixel based on vibe
+            h = hsv_pixels[:, 0]
+            s = hsv_pixels[:, 1]
+            v = hsv_pixels[:, 2]
+            
+            if vibe == "vibrant":
+                w = (s ** 2) * v
+            elif vibe == "minimal":
+                w = (1 - s) ** 2
+            elif vibe == "dark":
+                w = (1 - v) ** 2
+            elif vibe == "pastel":
+                w = (v ** 2) * (s * (1 - s)) * 4  # *4 scales the peak of s*(1-s) back up to 1.0
+            elif vibe == "warm":
+                w = s * ((np.cos((h - 0.05) * 2 * np.pi) + 1) / 2)
+            elif vibe == "cool":
+                w = s * ((np.cos((h - 0.55) * 2 * np.pi) + 1) / 2)
+            else:
+                w = np.ones_like(h)  # Fallback: equal weight for all pixels
+            
+            # Add a tiny baseline weight so no pixels are entirely ignored
+            weights = w + 0.05
+
+            # Apply K-Means in warped Cartesian HSV space with pixel weights.
             kmeans = KMeans(n_clusters=self.num_colors, random_state=42, n_init=10)
-            kmeans.fit(cartesian_pixels)
+            kmeans.fit(cartesian_pixels, sample_weight=weights)
 
             # Convert cluster centers back: Cartesian -> HSV -> RGB -> HEX.
             hsv_centers = self._cartesian_to_hsv(kmeans.cluster_centers_)

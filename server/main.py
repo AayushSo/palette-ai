@@ -167,7 +167,7 @@ async def extract_palette(
                 }
             else:
                 # Use K-Means local extraction
-                palette = extractor.extract(image_source)
+                palette = extractor.extract(image_source, vibe)
                 
                 if DEBUG:
                     logger.info(f"✅ Local palette extracted: {len(palette)} colors")
