@@ -57,3 +57,29 @@ Example format:
 [{{"hex": "#FF6B6B", "name": "Coral Blush"}}, {{"hex": "#4ECDC4", "name": "Mint Fresh"}}, {{"hex": "#45B7D1", "name": "Sky Blue"}}, {{"hex": "#FFA07A", "name": "Peach Glow"}}, {{"hex": "#98D8C8", "name": "Seafoam"}}]
 
 Return ONLY the JSON array, nothing else."""
+
+COLOR_NAME_GENERATION_SYSTEM_PROMPT = """You are a color naming assistant.
+Given a list of HEX color codes, generate concise and creative names.
+
+CRITICAL:
+- Return ONLY a valid JSON array of strings.
+- Each string must be a color name with 1-2 words ONLY.
+- Keep names title-cased and descriptive.
+- Do not include any explanations or extra text.
+"""
+
+COLOR_NAME_GENERATION_USER_TEMPLATE = """Generate names for these HEX colors:
+
+{hex_codes}
+
+Requirements:
+- Return exactly one name per HEX code in the same order
+- Each name must be 1-2 words ONLY
+- Avoid generic labels like "Color 1" or "Shade 2"
+
+IMPORTANT: Return ONLY a valid JSON array of strings.
+
+Example format:
+["Forest Moss", "Soft Sage", "Ivory Mist", "Lime Glow", "Olive Bark"]
+
+Return ONLY the JSON array, nothing else."""

@@ -11,7 +11,9 @@ import httpx
 from core.prompts import (
     PALETTE_GENERATION_SYSTEM_PROMPT,
     PALETTE_GENERATION_USER_TEMPLATE,
-    PALETTE_REFINEMENT_USER_TEMPLATE
+    PALETTE_REFINEMENT_USER_TEMPLATE,
+    COLOR_NAME_GENERATION_SYSTEM_PROMPT,
+    COLOR_NAME_GENERATION_USER_TEMPLATE,
 )
 
 # Configure logging
@@ -344,6 +346,69 @@ class LLMPaletteService:
         except Exception as e:
             logger.error(f"Error refining palette: {str(e)}")
             raise Exception(f"Error refining palette: {str(e)}")
+
+    async def generate_color_names(self, hex_codes: List[str]) -> List[str]:
+        """
+        Generate short color names from hex codes.
+
+        Args:
+            hex_codes: List of hex codes (e.g., ["#2D5A27", "#8FBC8F"])
+
+        Returns:
+            List of 1-2 word names in the same order
+        """
+        if not hex_codes:
+            return []
+
+        normalized_hex_codes = []
+        for hex_code in hex_codes:
+            if not isinstance(hex_code, str):
+                raise ValueError(f"Invalid hex code type: {type(hex_code)}")
+            normalized = hex_code if hex_code.startswith("#") else f"#{hex_code}"
+            if not self.validate_hex_color(normalized):
+                raise ValueError(f"Invalid hex color code: {hex_code}")
+            normalized_hex_codes.append(normalized.upper())
+
+        user_message = COLOR_NAME_GENERATION_USER_TEMPLATE.format(
+            hex_codes=", ".join(normalized_hex_codes)
+        )
+
+        response_text = await self._gemini_generate_text(
+            message=f"{COLOR_NAME_GENERATION_SYSTEM_PROMPT}\n\n{user_message}",
+            request_type="generate-color-names",
+            context={"hex_codes": ",".join(normalized_hex_codes)},
+        )
+
+        json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if not json_match:
+                raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
+            json_str = json_match.group()
+
+        json_str = json_str.replace('\n', ' ').replace('\r', '')
+        json_str = re.sub(r',\s*]', ']', json_str)
+
+        names = json.loads(json_str)
+
+        if not isinstance(names, list):
+            raise ValueError("Response must be a JSON array of names")
+
+        if len(names) != len(normalized_hex_codes):
+            raise ValueError(
+                f"Expected {len(normalized_hex_codes)} names, got {len(names)}"
+            )
+
+        cleaned_names = []
+        for i, name in enumerate(names):
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"Invalid name at index {i}: {name}")
+            short_name = " ".join(name.strip().split()[:2])
+            cleaned_names.append(short_name)
+
+        return cleaned_names
 
     def validate_hex_color(self, hex_color: str) -> bool:
         """

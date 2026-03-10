@@ -45,6 +45,10 @@ class RefinePaletteRequest(BaseModel):
     instruction: str
     vibe: str = "vibrant"
 
+class GenerateColorNamesRequest(BaseModel):
+    """Request model for generating names from hex colors."""
+    colors: list
+
 # Initialize services
 extractor = KMeansExtractor()
 llm_service = LLMPaletteService()
@@ -164,6 +168,41 @@ def get_algorithms():
         "algorithms": ["kmeans"],
         "description": "Current supported algorithms for palette extraction"
     }
+
+
+@app.post("/api/generate-color-names")
+async def generate_color_names(request: GenerateColorNamesRequest):
+    """
+    Generate short color names for provided HEX codes.
+
+    Args:
+        request: GenerateColorNamesRequest with colors list
+
+    Returns:
+        Names list in same order as input colors
+    """
+    try:
+        hex_codes = []
+        for color in request.colors:
+            if isinstance(color, dict):
+                hex_codes.append(color.get("hex", ""))
+            else:
+                hex_codes.append(color)
+
+        names = await llm_service.generate_color_names(hex_codes)
+
+        return {
+            "success": True,
+            "names": names,
+            "colors": hex_codes,
+        }
+    except Exception as e:
+        if DEBUG:
+            logger.error(f"❌ Error generating color names: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": str(e)}
+        )
 
 
 if __name__ == "__main__":

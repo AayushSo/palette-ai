@@ -44,6 +44,7 @@ const quickGenerateBtn = document.getElementById("quickGenerateBtn");
 // Store current palette for export/copy
 let currentPalette = [];
 let currentVibe = "vibrant";
+let namingRequestCounter = 0;
 
 // ====================
 // Event Listeners
@@ -146,9 +147,127 @@ function goBackToHome() {
   quickSearch.classList.add("hidden");
   paletteContainer.classList.add("hidden");
   paletteGrid.innerHTML = "";
+
+  // Reset URL to home view when leaving palette mode
+  const url = new URL(window.location.href);
+  url.searchParams.delete("colors");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   
   // Reset quick search input
   quickPrompt.value = "";
+}
+
+/**
+ * Convert a color value to six-digit uppercase hex without '#'.
+ */
+function normalizeHexForUrl(colorValue) {
+  if (!colorValue) {
+    return null;
+  }
+  const rawHex = String(colorValue).replace(/^#/, "").trim();
+  return /^[0-9A-Fa-f]{6}$/.test(rawHex) ? rawHex.toUpperCase() : null;
+}
+
+/**
+ * Update the current URL with shareable palette colors.
+ * Format: ?colors=2D5A27-8FBC8F-F5F5DC-E8F48C-556B2F
+ */
+function updateUrlWithPalette(colors) {
+  const serializedColors = colors
+    .map((color) => {
+      const hex = typeof color === "string" ? color : color.hex;
+      return normalizeHexForUrl(hex);
+    })
+    .filter(Boolean)
+    .join("-");
+
+  if (!serializedColors) {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set("colors", serializedColors);
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+/**
+ * Parse shareable colors from URL query string.
+ */
+function getPaletteFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const rawColors = params.get("colors");
+
+  if (!rawColors) {
+    return null;
+  }
+
+  const colorTokens = rawColors
+    .split("-")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (colorTokens.length === 0) {
+    return null;
+  }
+
+  const parsedColors = [];
+  for (const token of colorTokens) {
+    const normalized = normalizeHexForUrl(token);
+    if (!normalized) {
+      console.warn(`⚠️ [URL Palette] Invalid color token ignored: ${token}`);
+      return null;
+    }
+    parsedColors.push({ hex: `#${normalized}`, name: "" });
+  }
+
+  return parsedColors;
+}
+
+/**
+ * Request color names in the background and patch the current palette UI.
+ */
+async function generateColorNamesInBackground(colors) {
+  const requestId = ++namingRequestCounter;
+  const hexCodes = colors.map((color) => (typeof color === "string" ? color : color.hex));
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/generate-color-names`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ colors: hexCodes }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to generate color names");
+    }
+
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.names)) {
+      throw new Error(data.error || "Invalid color names response");
+    }
+
+    // Ignore stale responses from older requests.
+    if (requestId !== namingRequestCounter) {
+      return;
+    }
+
+    currentPalette = currentPalette.map((color, index) => {
+      const hex = typeof color === "string" ? color : color.hex;
+      const existingName = typeof color === "string" ? "" : (color.name || "");
+      return {
+        hex,
+        name: existingName || data.names[index] || "",
+      };
+    });
+
+    // Update names in-place without blocking initial palette render.
+    displayPalette(currentPalette, currentVibe, false);
+  } catch (error) {
+    console.warn("⚠️ [Color Names] Background naming failed:", error.message);
+  }
 }
 
 /**
@@ -363,7 +482,7 @@ function getTextColorClass(hex) {
 /**
  * Display palette in the UI
  */
-function displayPalette(colors, vibe = "vibrant") {
+function displayPalette(colors, vibe = "vibrant", shouldScroll = true) {
   console.log("🎨 [displayPalette] Rendering palette");
   console.log("   colors:", colors);
   console.log("   vibe:", vibe);
@@ -399,6 +518,20 @@ function displayPalette(colors, vibe = "vibrant") {
     paletteGrid.appendChild(colorCard);
   });
 
+  const needsNames = colors.some((color) => {
+    if (typeof color === "string") {
+      return true;
+    }
+    return !(color.name && color.name.trim());
+  });
+
+  if (needsNames) {
+    generateColorNamesInBackground(colors);
+  }
+
+  // Keep the URL shareable with the currently visible palette.
+  updateUrlWithPalette(colors);
+
   paletteContainer.classList.remove("hidden");
   
   // Toggle to full-screen palette view
@@ -406,7 +539,9 @@ function displayPalette(colors, vibe = "vibrant") {
   headerTitle.classList.add("hidden");
   quickSearch.classList.remove("hidden");
   
-  paletteContainer.scrollIntoView({ behavior: "smooth" });
+  if (shouldScroll) {
+    paletteContainer.scrollIntoView({ behavior: "smooth" });
+  }
   console.log("✅ [displayPalette] Palette rendered successfully");
 }
 
@@ -485,3 +620,10 @@ function downloadJSON(jsonString, filename) {
 
 console.log(`🚀 Color Palette App initialized`);
 console.log(`📡 API Base URL: ${API_BASE_URL}`);
+
+// Auto-load shared palettes from URL when present.
+const sharedPalette = getPaletteFromUrl();
+if (sharedPalette) {
+  console.log("🔗 [URL Palette] Loading palette from query string");
+  displayPalette(sharedPalette, currentVibe);
+}
