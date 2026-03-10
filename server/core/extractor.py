@@ -5,6 +5,7 @@ from PIL import Image
 import httpx
 import io
 import os
+import colorsys
 from sklearn.cluster import KMeans
 
 
@@ -56,25 +57,22 @@ class KMeansExtractor(PaletteExtractorStrategy):
         try:
             # Load image from URL or file
             image_array = self._load_image(image_source)
-            
-            # Reshape image to be a list of pixels
-            pixels = image_array.reshape(-1, 3)
-            
-            # Sample pixels if image is too large (for performance)
-            max_pixels = 10000
-            if len(pixels) > max_pixels:
-                indices = np.random.choice(len(pixels), max_pixels, replace=False)
-                pixels = pixels[indices]
-            
-            # Apply K-Means clustering
+
+            # Build pixel set with chunk-based sampling for large images.
+            pixels = self._prepare_pixels(image_array)
+
+            # Convert RGB pixels to HSV in [0, 1], then warp HSV cylinder to Cartesian.
+            hsv_pixels = self._rgb_pixels_to_hsv(pixels)
+            cartesian_pixels = self._hsv_to_cartesian(hsv_pixels)
+
+            # Apply K-Means in warped Cartesian HSV space.
             kmeans = KMeans(n_clusters=self.num_colors, random_state=42, n_init=10)
-            kmeans.fit(pixels)
-            
-            # Get the cluster centers (dominant colors)
-            colors = kmeans.cluster_centers_
-            
-            # Convert to hex codes
-            hex_colors = [self._rgb_to_hex(color) for color in colors]
+            kmeans.fit(cartesian_pixels)
+
+            # Convert cluster centers back: Cartesian -> HSV -> RGB -> HEX.
+            hsv_centers = self._cartesian_to_hsv(kmeans.cluster_centers_)
+            rgb_centers = self._hsv_centers_to_rgb(hsv_centers)
+            hex_colors = [self._rgb_to_hex(color) for color in rgb_centers]
             
             return hex_colors
         
@@ -119,9 +117,119 @@ class KMeansExtractor(PaletteExtractorStrategy):
         """
         return self._load_image(image_url)
 
+    def _prepare_pixels(self, image_array: np.ndarray) -> np.ndarray:
+        """
+        Prepare pixels for clustering.
+
+        If image has more than 10k pixels, split into 10x10 chunks and sample
+        100 random pixels from each chunk for spatially balanced coverage.
+        """
+        height, width, _ = image_array.shape
+        total_pixels = height * width
+
+        if total_pixels <= 10000:
+            return image_array.reshape(-1, 3)
+
+        sampled_chunks = []
+        row_chunks = np.array_split(image_array, 10, axis=0)
+
+        for row_chunk in row_chunks:
+            col_chunks = np.array_split(row_chunk, 10, axis=1)
+            for chunk in col_chunks:
+                chunk_pixels = chunk.reshape(-1, 3)
+                # Enforce 100 picks per chunk; sample with replacement if needed.
+                replace = len(chunk_pixels) < 100
+                indices = np.random.choice(len(chunk_pixels), 100, replace=replace)
+                sampled_chunks.append(chunk_pixels[indices])
+
+        return np.vstack(sampled_chunks)
+
+    def _rgb_pixels_to_hsv(self, rgb_pixels: np.ndarray) -> np.ndarray:
+        """Convert RGB pixels (0-255) to HSV values in [0, 1]."""
+        rgb = np.clip(rgb_pixels.astype(np.float64) / 255.0, 0.0, 1.0)
+
+        r = rgb[:, 0]
+        g = rgb[:, 1]
+        b = rgb[:, 2]
+
+        maxc = np.max(rgb, axis=1)
+        minc = np.min(rgb, axis=1)
+        delta = maxc - minc
+
+        h = np.zeros_like(maxc)
+        s = np.zeros_like(maxc)
+        v = maxc
+
+        nonzero_max = maxc > 0
+        s[nonzero_max] = delta[nonzero_max] / maxc[nonzero_max]
+
+        nonzero_delta = delta > 0
+
+        r_is_max = (maxc == r) & nonzero_delta
+        g_is_max = (maxc == g) & nonzero_delta
+        b_is_max = (maxc == b) & nonzero_delta
+
+        h[r_is_max] = ((g[r_is_max] - b[r_is_max]) / delta[r_is_max]) % 6.0
+        h[g_is_max] = ((b[g_is_max] - r[g_is_max]) / delta[g_is_max]) + 2.0
+        h[b_is_max] = ((r[b_is_max] - g[b_is_max]) / delta[b_is_max]) + 4.0
+        h = (h / 6.0) % 1.0
+
+        return np.column_stack((h, s, v))
+
+    def _hsv_to_cartesian(self, hsv_pixels: np.ndarray) -> np.ndarray:
+        """
+        Warp HSV cylinder to Cartesian coordinates before clustering.
+
+        X = S * cos(H * 2*pi)
+        Y = S * sin(H * 2*pi)
+        Z = V
+        """
+        h = hsv_pixels[:, 0]
+        s = hsv_pixels[:, 1]
+        v = hsv_pixels[:, 2]
+
+        theta = h * 2.0 * np.pi
+        x = s * np.cos(theta)
+        y = s * np.sin(theta)
+        z = v
+
+        return np.column_stack((x, y, z))
+
+    def _cartesian_to_hsv(self, xyz_points: np.ndarray) -> np.ndarray:
+        """
+        Convert Cartesian cluster centers back to HSV.
+
+        H = (atan2(Y, X) / (2*pi)) mod 1
+        S = sqrt(X^2 + Y^2)
+        V = Z
+        """
+        x = xyz_points[:, 0]
+        y = xyz_points[:, 1]
+        z = xyz_points[:, 2]
+
+        h = (np.arctan2(y, x) / (2.0 * np.pi)) % 1.0
+        s = np.sqrt(np.square(x) + np.square(y))
+        v = z
+
+        hsv = np.column_stack((h, s, v))
+        hsv[:, 1] = np.clip(hsv[:, 1], 0.0, 1.0)
+        hsv[:, 2] = np.clip(hsv[:, 2], 0.0, 1.0)
+        return hsv
+
+    def _hsv_centers_to_rgb(self, hsv_centers: np.ndarray) -> np.ndarray:
+        """Convert HSV cluster centers in [0, 1] to RGB values in [0, 255]."""
+        rgb_centers = []
+        for h, s, v in hsv_centers:
+            r, g, b = colorsys.hsv_to_rgb(float(h), float(s), float(v))
+            rgb_centers.append([r * 255.0, g * 255.0, b * 255.0])
+        return np.array(rgb_centers)
+
     def _rgb_to_hex(self, rgb: tuple) -> str:
         """Convert RGB tuple to hex color code."""
-        return "#{:02X}{:02X}{:02X}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+        r = int(np.clip(round(rgb[0]), 0, 255))
+        g = int(np.clip(round(rgb[1]), 0, 255))
+        b = int(np.clip(round(rgb[2]), 0, 255))
+        return "#{:02X}{:02X}{:02X}".format(r, g, b)
 
 
 class DominantColorExtractor(PaletteExtractorStrategy):
