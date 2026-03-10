@@ -1,10 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import os
 import logging
 from dotenv import load_dotenv
+from typing import Optional
+import tempfile
+from pathlib import Path
 
 from core.extractor import KMeansExtractor
 from core.llm_service import LLMPaletteService
@@ -39,6 +42,12 @@ class GeneratePaletteRequest(BaseModel):
     prompt: str
     vibe: str = "vibrant"
 
+class ExtractPaletteRequest(BaseModel):
+    """Request model for palette extraction from image URL."""
+    image_url: str
+    vibe: str = "vibrant"
+    method: str = "local"
+
 class RefinePaletteRequest(BaseModel):
     """Request model for palette refinement."""
     colors: list
@@ -67,24 +76,117 @@ def read_root():
 
 
 @app.post("/api/extract-palette")
-async def extract_palette(image_url: str):
+async def extract_palette(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    vibe: Optional[str] = Form(None),
+    method: Optional[str] = Form(None)
+):
     """
-    Extract a color palette from an image URL.
+    Extract a color palette from an image URL or uploaded file.
+    Supports both JSON (for URLs) and multipart/form-data (for file uploads).
     
     Args:
-        image_url: URL of the image to extract colors from
+        request: FastAPI request object to inspect content type
+        file: Optional uploaded image file
+        vibe: The mood/style of the palette (for AI method)
+        method: Extraction method - "local" (K-Means) or "ai" (LLM-based)
     
     Returns:
-        Palette with hex color codes
+        Palette with hex color codes and descriptions
     """
     try:
-        palette = extractor.extract(image_url)
-        return {
-            "success": True,
-            "palette": palette,
-            "algorithm": "kmeans"
-        }
+        image_url = None
+        
+        # Check if this is a JSON request (URL-based) or FormData (file upload)
+        content_type = request.headers.get("content-type", "")
+        
+        if "application/json" in content_type:
+            # Handle JSON request for URL-based extraction
+            json_data = await request.json()
+            image_url = json_data.get("image_url")
+            vibe = json_data.get("vibe", "vibrant")
+            method = json_data.get("method", "local")
+        else:
+            # Handle FormData for file upload
+            vibe = vibe or "vibrant"
+            method = method or "local"
+        
+        # Validate input
+        if not image_url and not file:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Either image_url or file must be provided"}
+            )
+        
+        if image_url and file:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Provide either image_url or file, not both"}
+            )
+        
+        if DEBUG:
+            logger.info(f"📷 Extract palette: method={method}, vibe={vibe}")
+            if file:
+                logger.info(f"   Source: Uploaded file '{file.filename}'")
+            else:
+                logger.info(f"   Source: URL '{image_url[:50]}...'")
+        
+        # Handle file upload - save to temp file
+        image_source = image_url
+        temp_file_path = None
+        
+        if file:
+            # Create temp file with original extension
+            suffix = Path(file.filename).suffix if file.filename else ".jpg"
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            temp_file_path = temp_file.name
+            
+            # Write uploaded content to temp file
+            content = await file.read()
+            temp_file.write(content)
+            temp_file.close()
+            image_source = temp_file_path
+            
+            if DEBUG:
+                logger.info(f"   Temp file: {temp_file_path}")
+        
+        try:
+            if method == "ai":
+                # Use LLM to generate palette from image
+                palette = await llm_service.generate_palette_from_image(image_source, vibe)
+                
+                if DEBUG:
+                    logger.info(f"✅ AI palette generated: {len(palette.get('colors', []))} colors")
+                
+                return {
+                    "success": True,
+                    "palette": palette,
+                    "method": "ai",
+                    "vibe": vibe
+                }
+            else:
+                # Use K-Means local extraction
+                palette = extractor.extract(image_source)
+                
+                if DEBUG:
+                    logger.info(f"✅ Local palette extracted: {len(palette)} colors")
+                
+                return {
+                    "success": True,
+                    "palette": palette,
+                    "method": "local"
+                }
+        finally:
+            # Clean up temp file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                if DEBUG:
+                    logger.info(f"   Cleaned up temp file")
+                    
     except Exception as e:
+        if DEBUG:
+            logger.error(f"❌ Error extracting palette: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=400,
             content={"success": False, "error": str(e)}

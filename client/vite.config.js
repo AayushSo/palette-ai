@@ -12,10 +12,5 @@ export default defineConfig({
     sourcemap: false,
     minify: 'esbuild',
   },
-  define: {
-    'import.meta.env.VITE_API_URL': JSON.stringify(
-      process.env.VITE_API_URL || 'http://localhost:8000'
-    ),
-  },
   envPrefix: 'VITE_',
 })

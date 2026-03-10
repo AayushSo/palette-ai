@@ -7,6 +7,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 import httpx
+import base64
+from PIL import Image
+import io
 
 from core.prompts import (
     PALETTE_GENERATION_SYSTEM_PROMPT,
@@ -422,3 +425,209 @@ class LLMPaletteService:
         """
         hex_color = hex_color.lstrip("#")
         return len(hex_color) == 6 and all(c in "0123456789ABCDEFabcdef" for c in hex_color)
+
+    async def generate_palette_from_image(self, image_source: str, vibe: str = "vibrant") -> Dict:
+        """
+        Generate a color palette from an image using LLM vision capabilities.
+        
+        Args:
+            image_source: URL or file path of the image
+            vibe: Desired mood/style (e.g., "vibrant", "minimal", "dark", "pastel", "warm", "cool")
+        
+        Returns:
+            Dictionary containing palette with colors and descriptions
+        """
+        try:
+            if DEBUG:
+                logger.info(f"🖼️ LLMService.generate_palette_from_image() called")
+                logger.info(f"   image_source: {image_source}")
+                logger.info(f"   vibe: {vibe}")
+            
+            if self.provider == "gemini":
+                return await self._call_gemini_vision_api(image_source, vibe)
+            else:
+                raise ValueError(f"Unsupported provider for image palette generation: {self.provider}")
+        
+        except Exception as e:
+            logger.error(f"Error generating palette from image: {str(e)}")
+            raise Exception(f"Error generating palette from image: {str(e)}")
+
+    async def _call_gemini_vision_api(self, image_source: str, vibe: str) -> Dict:
+        """
+        Call Google Gemini Vision API to generate palette from image.
+        
+        Args:
+            image_source: URL or file path of the image
+            vibe: Desired mood/style
+        
+        Returns:
+            Generated palette with colors and descriptions
+        """
+        try:
+            if DEBUG:
+                logger.info(
+                    f"   🔗 Calling Gemini Vision API: model={self.gemini_model}, version={self.gemini_api_version}"
+                )
+            
+            # Load and encode image
+            image_data, mime_type = await self._load_and_encode_image(image_source)
+            
+            # Build the prompt
+            prompt = f"""Analyze this image and generate a cohesive color palette of exactly 5 colors that capture its essence.
+The palette should reflect a {vibe} mood/vibe.
+
+Extract colors that are:
+- Representative of the image's main color themes
+- Complementary and aesthetically pleasing together
+- Evocative of the {vibe} vibe
+
+Return ONLY a valid JSON array of 5 color objects with no additional text.
+Each object must have:
+- "hex": the hex color code (e.g., "#FF6B6B")
+- "name": a short descriptive name (1-2 words ONLY, e.g., "Coral Sunset", "Ocean Blue")
+
+Example format:
+[{{"hex": "#FF6B6B", "name": "Coral Blush"}}, {{"hex": "#4ECDC4", "name": "Mint Fresh"}}, {{"hex": "#45B7D1", "name": "Sky Blue"}}, {{"hex": "#FFA07A", "name": "Peach Glow"}}, {{"hex": "#98D8C8", "name": "Seafoam"}}]
+
+Return ONLY the JSON array, nothing else."""
+            
+            # Call Gemini API with image
+            endpoint = (
+                f"{self.gemini_base_url}/{self.gemini_api_version}/models/"
+                f"{self.gemini_model}:generateContent?key={self.api_key}"
+            )
+            
+            payload = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": prompt
+                            },
+                            {
+                                "inline_data": {
+                                    "mime_type": mime_type,
+                                    "data": image_data
+                                }
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "maxOutputTokens": 300,
+                },
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(endpoint, json=payload)
+
+            if response.status_code >= 400:
+                raise ValueError(
+                    f"Gemini Vision API HTTP {response.status_code}: {response.text[:500]}"
+                )
+
+            response_json = response.json()
+            response_text = (
+                response_json.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+                .strip()
+            )
+
+            if not response_text:
+                raise ValueError(f"Gemini returned empty text. Response: {json.dumps(response_json)[:500]}")
+
+            self._save_raw_response(response_text=response_text, request_type="generate-from-image", context={"vibe": vibe})
+
+            if DEBUG:
+                logger.info(f"   ✅ Gemini Vision API responded")
+                logger.info(f"   📦 Response length: {len(response_text)} chars")
+                logger.info(f"   📝 Raw response: {response_text}")
+            
+            # Parse JSON response (same as generate_palette)
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\[\s*\{[^\]]+\}\s*(?:,\s*\{[^\]]+\}\s*)*\]', response_text, re.DOTALL)
+                if not json_match:
+                    logger.error(f"   ❌ Could not find JSON array in response: {response_text}")
+                    raise ValueError(f"No JSON array found in response. Response was: {response_text[:200]}")
+                json_str = json_match.group()
+            
+            # Clean up common JSON issues
+            json_str = json_str.replace('\n', ' ').replace('\r', '')
+            json_str = re.sub(r',\s*]', ']', json_str)
+            json_str = re.sub(r',\s*}', '}', json_str)
+            
+            color_objects = json.loads(json_str)
+            
+            # Validate
+            if not isinstance(color_objects, list) or len(color_objects) != 5:
+                raise ValueError(f"Response must be an array of exactly 5 color objects")
+            
+            for i, color in enumerate(color_objects):
+                if not isinstance(color, dict) or 'hex' not in color or 'name' not in color:
+                    raise ValueError(f"Color object at index {i} must have 'hex' and 'name' fields")
+            
+            if DEBUG:
+                logger.info(f"   🎨 Parsed {len(color_objects)} color objects from image")
+            
+            return {
+                "colors": color_objects,
+                "vibe": vibe
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calling Gemini Vision API: {str(e)}")
+            raise Exception(f"Error calling Gemini Vision API: {str(e)}")
+
+    async def _load_and_encode_image(self, image_source: str) -> tuple[str, str]:
+        """
+        Load an image from URL or file path and encode it as base64.
+        
+        Args:
+            image_source: URL or file path of the image
+        
+        Returns:
+            Tuple of (base64_encoded_data, mime_type)
+        """
+        try:
+            # Check if it's a local file path
+            if os.path.exists(image_source):
+                with open(image_source, "rb") as f:
+                    image_bytes = f.read()
+                
+                # Determine mime type from file extension
+                ext = Path(image_source).suffix.lower()
+                mime_type_map = {
+                    '.jpg': 'image/jpeg',
+                    '.jpeg': 'image/jpeg',
+                    '.png': 'image/png',
+                    '.gif': 'image/gif',
+                    '.webp': 'image/webp'
+                }
+                mime_type = mime_type_map.get(ext, 'image/jpeg')
+            else:
+                # Assume it's a URL
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(image_source)
+                    response.raise_for_status()
+                    image_bytes = response.content
+                    
+                # Get mime type from response headers
+                mime_type = response.headers.get('content-type', 'image/jpeg')
+            
+            # Encode to base64
+            base64_data = base64.b64encode(image_bytes).decode('utf-8')
+            
+            if DEBUG:
+                logger.info(f"   📷 Image encoded: {len(base64_data)} bytes, mime_type={mime_type}")
+            
+            return base64_data, mime_type
+            
+        except Exception as e:
+            raise Exception(f"Failed to load and encode image: {str(e)}")

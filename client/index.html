@@ -42,6 +42,32 @@
                             placeholder="Enter image URL (e.g., https://example.com/image.jpg)"
                         >
                     </div>
+                    <div class="form-group">
+                        <label for="imageFile">Or Upload Image:</label>
+                        <input 
+                            type="file" 
+                            id="imageFile" 
+                            accept="image/*"
+                        >
+                    </div>
+                    <div class="form-group">
+                        <label for="extractVibe">Vibe:</label>
+                        <select id="extractVibe">
+                            <option value="vibrant">Vibrant</option>
+                            <option value="minimal">Minimal</option>
+                            <option value="dark">Dark</option>
+                            <option value="pastel">Pastel</option>
+                            <option value="warm">Warm</option>
+                            <option value="cool">Cool</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="extractMethod">Generation Method:</label>
+                        <select id="extractMethod">
+                            <option value="ai">AI Agent</option>
+                            <option value="local">Local (K-Means)</option>
+                        </select>
+                    </div>
                     <button id="extractBtn" class="btn-primary">Extract Palette</button>
                 </div>
 
@@ -78,7 +104,7 @@
                 <!-- Error State -->
                 <div id="error" class="error hidden">
                     <p id="errorMessage"></p>
-                    <button onclick="closeError()" class="btn-secondary">Dismiss</button>
+                    <button id="dismissErrorBtn" class="btn-secondary">Dismiss</button>
                 </div>
             </div>
         </main>

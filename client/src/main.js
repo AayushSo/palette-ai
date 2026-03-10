@@ -1,8 +1,7 @@
 // API Configuration
-// For local dev: http://localhost:8000
-// For production: automatically uses Vercel env variable
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const DEBUG_MODE = import.meta.env.VITE_DEBUG === "true" || true; // Enable debug by default
+// In production, default to same-origin unless VITE_API_URL is explicitly set.
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? window.location.origin : "http://localhost:8000");
+const DEBUG_MODE = import.meta.env.VITE_DEBUG === "true";
 
 console.log("🚀 [App Init] Starting Color Palette App");
 console.log("   API_BASE_URL:", API_BASE_URL);
@@ -26,11 +25,15 @@ const tabContents = document.querySelectorAll(".tab-content");
 const extractBtn = document.getElementById("extractBtn");
 const generateBtn = document.getElementById("generateBtn");
 const imageUrlInput = document.getElementById("imageUrl");
+const imageFileInput = document.getElementById("imageFile");
+const extractVibeSelect = document.getElementById("extractVibe");
+const extractMethodSelect = document.getElementById("extractMethod");
 const promptInput = document.getElementById("prompt");
 const vibeSelect = document.getElementById("vibe");
 const loadingDiv = document.getElementById("loading");
 const errorDiv = document.getElementById("error");
 const errorMessage = document.getElementById("errorMessage");
+const dismissErrorBtn = document.getElementById("dismissErrorBtn");
 const paletteContainer = document.getElementById("paletteContainer");
 const paletteGrid = document.getElementById("paletteGrid");
 const copyAllBtn = document.getElementById("copyAllBtn");
@@ -69,14 +72,30 @@ vibeSelect.addEventListener("change", (e) => {
   applyVibeBackground(currentVibe);
 });
 
+// Update background when extract vibe changes
+extractVibeSelect.addEventListener("change", (e) => {
+  currentVibe = e.target.value;
+  applyVibeBackground(currentVibe);
+});
+
 // Extract palette from image
 extractBtn.addEventListener("click", async () => {
   const imageUrl = imageUrlInput.value.trim();
-  if (!imageUrl) {
-    showError("Please enter an image URL");
+  const imageFile = imageFileInput.files[0];
+  const vibe = extractVibeSelect.value;
+  const method = extractMethodSelect.value;
+  
+  if (!imageUrl && !imageFile) {
+    showError("Please enter an image URL or upload an image file");
     return;
   }
-  await extractPalette(imageUrl);
+  
+  if (imageUrl && imageFile) {
+    showError("Please provide either a URL or a file, not both");
+    return;
+  }
+  
+  await extractPalette(imageUrl, imageFile, vibe, method);
 });
 
 // Generate palette from text
@@ -111,6 +130,10 @@ quickPrompt.addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
     quickGenerateBtn.click();
   }
+});
+
+dismissErrorBtn.addEventListener("click", () => {
+  closeError();
 });
 
 // Copy all hex codes
@@ -301,22 +324,41 @@ function applyVibeBackground(vibe) {
 }
 
 /**
- * Extract palette from image URL
+ * Extract palette from image URL or file
  */
-async function extractPalette(imageUrl) {
+async function extractPalette(imageUrl, imageFile, vibe, method) {
   showLoading(true);
   try {
     console.log("📷 [extractPalette] Starting request...");
     console.log("   imageUrl:", imageUrl);
+    console.log("   imageFile:", imageFile?.name);
+    console.log("   vibe:", vibe);
+    console.log("   method:", method);
     console.log("   endpoint:", `${API_BASE_URL}/api/extract-palette`);
     
-    const response = await fetch(`${API_BASE_URL}/api/extract-palette`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ image_url: imageUrl }),
-    });
+    let response;
+    
+    if (imageFile) {
+      // Handle file upload
+      const formData = new FormData();
+      formData.append("file", imageFile);
+      formData.append("vibe", vibe);
+      formData.append("method", method);
+      
+      response = await fetch(`${API_BASE_URL}/api/extract-palette`, {
+        method: "POST",
+        body: formData,
+      });
+    } else {
+      // Handle URL
+      response = await fetch(`${API_BASE_URL}/api/extract-palette`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ image_url: imageUrl, vibe, method }),
+      });
+    }
 
     console.log("✅ [extractPalette] Response received");
     console.log("   status:", response.status);
@@ -331,7 +373,10 @@ async function extractPalette(imageUrl) {
     console.log("📦 [extractPalette] Response data:", data);
     
     if (data.success) {
-      displayPalette(data.palette, currentVibe);
+      // For AI method, use data.palette.colors (similar to generate)
+      // For local method, use data.palette (array of hex strings)
+      const colors = method === "ai" ? data.palette.colors : data.palette;
+      displayPalette(colors, vibe);
       showMessage("Palette extracted successfully!");
     } else {
       throw new Error(data.error || "Unknown error");
