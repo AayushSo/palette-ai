@@ -26,6 +26,10 @@ body {
 }
 
 /* Vibe-based backgrounds */
+body.vibe-standard {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
 body.vibe-vibrant {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }

@@ -161,10 +161,29 @@ class LLMPaletteService:
                 )
             
             # Build the user message from template
-            user_message = PALETTE_GENERATION_USER_TEMPLATE.format(
-                prompt=prompt,
-                vibe=vibe
-            )
+            # For "standard" vibe, omit vibe-specific instructions
+            if vibe == "standard":
+                user_message = f"""Generate a color palette for:
+
+Theme/Prompt: {prompt}
+
+Requirements:
+- Generate exactly 5 distinct colors
+- Each color should be meaningful and contribute to the overall theme
+- Consider color harmony and psychological impact
+- Provide creative, descriptive names (1-2 words ONLY)
+
+IMPORTANT: Return ONLY a valid JSON array of 5 objects. No additional text.
+
+Example format:
+[{{"hex": "#FF6B6B", "name": "Coral Blush"}}, {{"hex": "#4ECDC4", "name": "Mint Fresh"}}, {{"hex": "#45B7D1", "name": "Sky Blue"}}, {{"hex": "#FFA07A", "name": "Peach Glow"}}, {{"hex": "#98D8C8", "name": "Seafoam"}}]
+
+Return ONLY the JSON array, nothing else."""
+            else:
+                user_message = PALETTE_GENERATION_USER_TEMPLATE.format(
+                    prompt=prompt,
+                    vibe=vibe
+                )
             
             response_text = await self._gemini_generate_text(
                 message=f"{PALETTE_GENERATION_SYSTEM_PROMPT}\n\n{user_message}",
@@ -270,11 +289,33 @@ class LLMPaletteService:
                 current_palette_str = ", ".join(current_palette)
             
             # Build the user message from refinement template
-            user_message = PALETTE_REFINEMENT_USER_TEMPLATE.format(
-                current_palette=current_palette_str,
-                instruction=instruction,
-                vibe=vibe
-            )
+            # For "standard" vibe, omit vibe-specific instructions
+            if vibe == "standard":
+                user_message = f"""Modify the existing color palette based on the new instruction.
+
+Current Palette:
+{current_palette_str}
+
+New Instruction: {instruction}
+
+Requirements:
+- Apply the modification while maintaining color harmony
+- Generate exactly 5 distinct colors
+- Preserve the best colors if the modification requires only subtle changes
+- Provide creative, descriptive names (1-2 words ONLY)
+
+IMPORTANT: Return ONLY a valid JSON array of 5 objects. No additional text.
+
+Example format:
+[{{"hex": "#FF6B6B", "name": "Coral Blush"}}, {{"hex": "#4ECDC4", "name": "Mint Fresh"}}, {{"hex": "#45B7D1", "name": "Sky Blue"}}, {{"hex": "#FFA07A", "name": "Peach Glow"}}, {{"hex": "#98D8C8", "name": "Seafoam"}}]
+
+Return ONLY the JSON array, nothing else."""
+            else:
+                user_message = PALETTE_REFINEMENT_USER_TEMPLATE.format(
+                    current_palette=current_palette_str,
+                    instruction=instruction,
+                    vibe=vibe
+                )
 
             if DEBUG:
                 logger.info(
@@ -472,8 +513,25 @@ class LLMPaletteService:
             # Load and encode image
             image_data, mime_type = await self._load_and_encode_image(image_source)
             
-            # Build the prompt
-            prompt = f"""Analyze this image and generate a cohesive color palette of exactly 5 colors that capture its essence.
+            # Build the prompt - conditionally include vibe for "standard"
+            if vibe == "standard":
+                prompt = """Analyze this image and generate a cohesive color palette of exactly 5 colors that capture its essence.
+
+Extract colors that are:
+- Representative of the image's main color themes
+- Complementary and aesthetically pleasing together
+
+Return ONLY a valid JSON array of 5 color objects with no additional text.
+Each object must have:
+- "hex": the hex color code (e.g., "#FF6B6B")
+- "name": a short descriptive name (1-2 words ONLY, e.g., "Coral Sunset", "Ocean Blue")
+
+Example format:
+[{{"hex": "#FF6B6B", "name": "Coral Blush"}}, {{"hex": "#4ECDC4", "name": "Mint Fresh"}}, {{"hex": "#45B7D1", "name": "Sky Blue"}}, {{"hex": "#FFA07A", "name": "Peach Glow"}}, {{"hex": "#98D8C8", "name": "Seafoam"}}]
+
+Return ONLY the JSON array, nothing else."""
+            else:
+                prompt = f"""Analyze this image and generate a cohesive color palette of exactly 5 colors that capture its essence.
 The palette should reflect a {vibe} mood/vibe.
 
 Extract colors that are:

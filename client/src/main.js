@@ -46,7 +46,7 @@ const quickGenerateBtn = document.getElementById("quickGenerateBtn");
 
 // Store current palette for export/copy
 let currentPalette = [];
-let currentVibe = "vibrant";
+let currentVibe = "standard";
 let namingRequestCounter = 0;
 
 // ====================
@@ -312,6 +312,7 @@ function switchTab(tabName) {
 function applyVibeBackground(vibe) {
   // Remove all vibe classes
   document.body.classList.remove(
+    "vibe-standard",
     "vibe-vibrant",
     "vibe-minimal",
     "vibe-dark",
@@ -527,7 +528,7 @@ function getTextColorClass(hex) {
 /**
  * Display palette in the UI
  */
-function displayPalette(colors, vibe = "vibrant", shouldScroll = true) {
+function displayPalette(colors, vibe = "standard", shouldScroll = true) {
   console.log("🎨 [displayPalette] Rendering palette");
   console.log("   colors:", colors);
   console.log("   vibe:", vibe);

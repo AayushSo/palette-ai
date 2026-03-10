@@ -83,8 +83,8 @@ class KMeansExtractor(PaletteExtractorStrategy):
                 w = s * ((np.cos((h - 0.05) * 2 * np.pi) + 1) / 2)
             elif vibe == "cool":
                 w = s * ((np.cos((h - 0.55) * 2 * np.pi) + 1) / 2)
-            else:
-                w = np.ones_like(h)  # Fallback: equal weight for all pixels
+            else:  # "standard" or any unrecognized vibe
+                w = np.ones_like(h)  # Equal weight for all pixels
             
             # Add a tiny baseline weight so no pixels are entirely ignored
             weights = w + 0.05
